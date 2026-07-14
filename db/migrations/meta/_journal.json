@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1784000754905,
+      "tag": "0000_young_infant_terrible",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784000788138,
+      "tag": "0001_rls_policies_trigger_fk",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784002527983,
+      "tag": "0002_entregar_codigos_pedido_function",
+      "breakpoints": true
+    }
+  ]
+}
