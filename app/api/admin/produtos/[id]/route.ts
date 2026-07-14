@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { produtos } from "@/db/schema";
 import { requireAdmin } from "@/lib/admin/guard";
-import { abacateFetch, type AbacateProduct } from "@/lib/abacatepay";
+import { syncAbacateProduct } from "@/lib/abacatepay";
 
 export async function PATCH(
   request: Request,
@@ -43,20 +43,13 @@ export async function PATCH(
 
   // Ao editar, sincronizar de novo com o AbacatePay (nome/preço/imagem podem ter mudado)
   try {
-    const { data: abacateProduct } = await abacateFetch<AbacateProduct>(
-      "/products/create",
-      {
-        method: "POST",
-        body: JSON.stringify({
-          externalId: produto.id,
-          name: produto.nome,
-          price: Math.round(parseFloat(produto.preco) * 100),
-          currency: "BRL",
-          description: produto.descricao ?? undefined,
-          imageUrl: produto.imagemUrl ?? undefined,
-        }),
-      }
-    );
+    const abacateProduct = await syncAbacateProduct({
+      id: produto.id,
+      nome: produto.nome,
+      preco: produto.preco,
+      descricao: produto.descricao,
+      imagemUrl: produto.imagemUrl,
+    });
 
     await db
       .update(produtos)

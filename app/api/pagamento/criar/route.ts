@@ -6,8 +6,8 @@ import { produtos, codigos, pedidos, itensPedido, profiles } from "@/db/schema";
 import { createClient } from "@/lib/supabase/server";
 import {
   abacateFetch,
+  syncAbacateProduct,
   toAbacateCellphone,
-  type AbacateProduct,
   type AbacateCustomer,
   type AbacateCheckout,
 } from "@/lib/abacatepay";
@@ -71,24 +71,17 @@ export async function POST(request: Request) {
   try {
     // 2. Sincronizar produtos com o AbacatePay sempre, para garantir que o preço
     // enviado reflita o valor atual do produto (o AbacatePay não expõe um
-    // endpoint de update — resincronizar via /products/create a cada checkout
-    // evita cobrar um preço antigo cacheado em um abacate_product_id velho).
+    // endpoint de update — syncAbacateProduct apaga e recria quando algo mudou,
+    // evitando cobrar um preço antigo cacheado em um abacate_product_id velho).
     for (const item of cartItems) {
       const produto = produtoMap.get(item.produtoId)!;
-      const { data: abacateProduct } = await abacateFetch<AbacateProduct>(
-        "/products/create",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            externalId: produto.id,
-            name: produto.nome,
-            price: Math.round(parseFloat(produto.preco) * 100),
-            currency: "BRL",
-            description: produto.descricao ?? undefined,
-            imageUrl: produto.imagemUrl ?? undefined,
-          }),
-        }
-      );
+      const abacateProduct = await syncAbacateProduct({
+        id: produto.id,
+        nome: produto.nome,
+        preco: produto.preco,
+        descricao: produto.descricao,
+        imagemUrl: produto.imagemUrl,
+      });
 
       if (abacateProduct.id !== produto.abacateProductId) {
         await db
