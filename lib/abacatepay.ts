@@ -1,3 +1,5 @@
+import { createHash } from 'crypto';
+
 const ABACATE_BASE_URL = 'https://api.abacatepay.com/v2';
 
 type AbacateResponse<T> = { data: T; success: boolean; error: string | null };
@@ -56,14 +58,24 @@ export type AbacateProductInput = {
 
 /**
  * Garante que o produto no AbacatePay reflete o preço/nome/descrição atuais.
- * O AbacatePay não tem endpoint de update — se já existe um produto com esse
- * externalId e algo mudou, apaga e recria; caso contrário reaproveita o existente.
+ *
+ * O AbacatePay não tem endpoint de update, e /products/delete falha (400)
+ * quando o produto já tem checkouts/pedidos vinculados — então NUNCA apagamos
+ * um produto existente. Em vez disso, o externalId é derivado de um hash dos
+ * campos relevantes: se algo muda, vira um externalId novo (produto novo no
+ * AbacatePay); se nada mudou, o mesmo externalId já existe e é reaproveitado.
+ * Produtos antigos ficam órfãos no AbacatePay — inofensivo, sem custo.
  */
 export async function syncAbacateProduct(produto: AbacateProductInput): Promise<AbacateProduct> {
   const priceCents = Math.round(parseFloat(produto.preco) * 100);
+  const variantHash = createHash('sha256')
+    .update(`${produto.nome}|${priceCents}|${produto.descricao ?? ''}|${produto.imagemUrl ?? ''}`)
+    .digest('hex')
+    .slice(0, 12);
+  const externalId = `${produto.id}-${variantHash}`;
 
   const getRes = await fetch(
-    `${ABACATE_BASE_URL}/products/get?externalId=${produto.id}`,
+    `${ABACATE_BASE_URL}/products/get?externalId=${externalId}`,
     {
       headers: { Authorization: `Bearer ${process.env.ABACATEPAY_API_KEY}` },
     }
@@ -71,22 +83,13 @@ export async function syncAbacateProduct(produto: AbacateProductInput): Promise<
 
   if (getRes.ok) {
     const { data: existente } = (await getRes.json()) as AbacateResponse<AbacateProduct>;
-
-    const mudou =
-      existente.price !== priceCents ||
-      existente.name !== produto.nome ||
-      (existente.description ?? null) !== (produto.descricao ?? null) ||
-      (existente.imageUrl ?? null) !== (produto.imagemUrl ?? null);
-
-    if (!mudou) return existente;
-
-    await abacateFetch(`/products/delete?id=${existente.id}`, { method: 'POST' });
+    return existente;
   }
 
   const { data: novo } = await abacateFetch<AbacateProduct>('/products/create', {
     method: 'POST',
     body: JSON.stringify({
-      externalId: produto.id,
+      externalId,
       name: produto.nome,
       price: priceCents,
       currency: 'BRL',
