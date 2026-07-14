@@ -69,32 +69,35 @@ export async function POST(request: Request) {
   }
 
   try {
-    // 2. Sincronizar produtos sem abacate_product_id
+    // 2. Sincronizar produtos com o AbacatePay sempre, para garantir que o preço
+    // enviado reflita o valor atual do produto (o AbacatePay não expõe um
+    // endpoint de update — resincronizar via /products/create a cada checkout
+    // evita cobrar um preço antigo cacheado em um abacate_product_id velho).
     for (const item of cartItems) {
       const produto = produtoMap.get(item.produtoId)!;
-      if (!produto.abacateProductId) {
-        const { data: abacateProduct } = await abacateFetch<AbacateProduct>(
-          "/products/create",
-          {
-            method: "POST",
-            body: JSON.stringify({
-              externalId: produto.id,
-              name: produto.nome,
-              price: Math.round(parseFloat(produto.preco) * 100),
-              currency: "BRL",
-              description: produto.descricao ?? undefined,
-              imageUrl: produto.imagemUrl ?? undefined,
-            }),
-          }
-        );
+      const { data: abacateProduct } = await abacateFetch<AbacateProduct>(
+        "/products/create",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            externalId: produto.id,
+            name: produto.nome,
+            price: Math.round(parseFloat(produto.preco) * 100),
+            currency: "BRL",
+            description: produto.descricao ?? undefined,
+            imageUrl: produto.imagemUrl ?? undefined,
+          }),
+        }
+      );
 
+      if (abacateProduct.id !== produto.abacateProductId) {
         await db
           .update(produtos)
           .set({ abacateProductId: abacateProduct.id })
           .where(eq(produtos.id, produto.id));
-
-        produto.abacateProductId = abacateProduct.id;
       }
+
+      produto.abacateProductId = abacateProduct.id;
     }
 
     // 3. Criar/recuperar customer no AbacatePay
